@@ -8,6 +8,7 @@ A phone-friendly, single-page tool for independent pharmacies. It combines three
 
 It shows:
 
+- **Best NDC**: one recommendation per drug — the NDC to stock that makes the most across your whole plan mix, with a confidence level based on how much is real payment data
 - **Switch NDCs**: for each drug + plan, which NDC left more profit per unit than the one dispensed most
 - **Losing money**: drug + plan combos paid below cost, with MAC-appeal flags when paid below NADAC
 - **Overpaying**: NDCs bought well above NADAC

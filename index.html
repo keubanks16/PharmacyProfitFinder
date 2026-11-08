@@ -257,8 +257,36 @@ const Core = (() => {
     }
     over.sort((a,b)=>b.extraYr-a.extraYr||b.ratio-a.ratio);
 
+    // best single NDC to stock per drug, across all plans
+    const best=[];
+    const gpByGroup=new Map(); for(const gp of byGP.values()){ if(!gpByGroup.has(gp.group)) gpByGroup.set(gp.group,[]); gpByGroup.get(gp.group).push(gp); }
+    for(const [g,gps] of gpByGroup){
+      const cands=[...(groupNdcs.get(g)||[])].map(n=>({ndc:n,c:costOf(n)})).filter(x=>x.c);
+      if(cands.length<2) continue;
+      const plans=gps.map(gp=>{ const units=gp.ndcs.reduce((s,n)=>s+n.units,0), rev=gp.ndcs.reduce((s,n)=>s+n.rev,0);
+        const known=gp.ndcs.filter(n=>n.cost!=null); return {plan:gp.plan,units,revU:rev/units,ndcs:gp.ndcs,
+        curProfit: known.length? known.reduce((s,n)=>s+n.rev-n.cost,0)*(units/known.reduce((s,n)=>s+n.units,0)) : null}; });
+      const totU=plans.reduce((s,p)=>s+p.units,0);
+      if(plans.some(p=>p.curProfit==null)) continue;
+      const cur=plans.reduce((s,p)=>s+p.curProfit,0);
+      const score=cands.map(c=>{ let prof=0, actualU=0; const per=plans.map(p=>{
+          const hit=p.ndcs.find(n=>n.ndc===c.ndc && n.fills>=minClaims && n.marginU!=null);
+          const mU=hit? hit.marginU : p.revU - c.c.u; if(hit) actualU+=p.units; prof+=mU*p.units;
+          return {plan:p.plan,units:p.units,mU,est:!hit}; });
+        return {ndc:c.ndc,costU:c.c.u,src:c.c.src,prof,actualShare:actualU/totU,per}; }).sort((a,b)=>b.prof-a.prof);
+      const solid=score.filter(s=>s.actualShare>=0.3); if(!solid.length) continue;
+      const top=solid[0]; const gain=top.prof-cur;
+      const maybe=score.find(s=>s.actualShare<0.3 && s.prof>top.prof);
+      const mix=plans.reduce((s,p,i)=>s+Math.max(...score.map(sc=>sc.per[i].mU))*p.units,0);
+      const mainNdc=[...gps.flatMap(gp=>gp.ndcs)].reduce((m,n)=>{m[n.ndc]=(m[n.ndc]||0)+n.units; return m;},{});
+      const nowNdc=Object.entries(mainNdc).sort((a,b)=>b[1]-a[1])[0][0];
+      if(gain<=0.5 && !maybe) continue;
+      const conf=top.actualShare>=0.7?'High':'Medium';
+      best.push({group:g,top,nowNdc,cur,gainYr:gain*annual,maybe:maybe?{ndc:maybe.ndc,extraYr:(maybe.prof-top.prof)*annual,costU:maybe.costU}:null,mixGainYr:(mix-cur)*annual,conf,runner:score.filter(s=>s!==top).slice(0,3),totU});
+    }
+    best.sort((a,b)=>b.gainYr-a.gainYr);
     const groups=[...new Set([...byGP.values()].map(g=>g.group))].sort();
-    return {tot, switches, losing, over, byGP:[...byGP.values()], groups, groupNdcs, maxD, cutoff, weeks, annual, inWinCount:inWin.length, costOf};
+    return {tot, best, switches, losing, over, byGP:[...byGP.values()], groups, groupNdcs, maxD, cutoff, weeks, annual, inWinCount:inWin.length, costOf};
   }
 
   // ---------- Sample data (made up) ----------
@@ -313,10 +341,10 @@ try{ const o=JSON.parse(localStorage.getItem('ppf_opts')||'null'); if(o) Object.
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $f=(n,d=2)=>n==null||isNaN(n)?'—':(n<0?'-':'')+'$'+Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
-const $u=n=>n==null||isNaN(n)?'—':'$'+n.toFixed(n<1?4:3);
+const $u=n=>n==null||isNaN(n)?'—':(n<0?'-':'')+'$'+Math.abs(n).toFixed(Math.abs(n)<1?4:3);
 const fmtNdc=n=>n&&n.length===11?n.slice(0,5)+'-'+n.slice(5,9)+'-'+n.slice(9):n;
 const pct=n=>(n*100).toFixed(0)+'%';
-const TABS=[['overview','Overview'],['switch','Switch NDCs'],['losing','Losing money'],['over','Overpaying'],['lookup','Drug lookup'],['reject','Rejections'],['data','Your data']];
+const TABS=[['overview','Overview'],['best','Best NDC'],['switch','Switch NDCs'],['losing','Losing money'],['over','Overpaying'],['lookup','Drug lookup'],['reject','Rejections'],['data','Your data']];
 
 function currentData(){
   if(S.sampleMode) return S.sample||(S.sample=Core.sample());
@@ -327,7 +355,7 @@ function recompute(){ A=Core.analyze(currentData(), S.opts); render(); }
 
 function renderTabs(){
   $('#tabs').innerHTML=TABS.map(([k,l])=>{
-    let badge=''; if(A){ if(k==='switch'&&A.switches.length) badge=' · '+A.switches.length; if(k==='losing'&&A.losing.length) badge=' · '+A.losing.length; if(k==='over'&&A.over.length) badge=' · '+A.over.length; }
+    let badge=''; if(A){ if(k==='best'&&A.best.length) badge=' · '+A.best.length; if(k==='switch'&&A.switches.length) badge=' · '+A.switches.length; if(k==='losing'&&A.losing.length) badge=' · '+A.losing.length; if(k==='over'&&A.over.length) badge=' · '+A.over.length; }
     return `<button class="${S.tab===k?'on':''}" data-tab="${k}">${l}${badge}</button>`;}).join('');
 }
 function banner(){
@@ -352,9 +380,30 @@ function vOverview(){
    <div class="list-item" data-tab="switch"><div class="row"><span>Dispense the better-paying NDC</span><span class="big good">${$f(opp,0)}</span></div><div class="small muted">${A.switches.length} drug + plan combos</div></div>
    <div class="list-item" data-tab="losing"><div class="row"><span>Drug + plan combos losing money</span><span class="big badc">${$f(-loss,0)}</span></div><div class="small muted">${A.losing.length} combos · some fixable by switching, others need an appeal</div></div>
    <div class="list-item" data-tab="over"><div class="row"><span>Paying well above NADAC</span><span class="big" style="color:var(--warn)">${$f(ov,0)}</span></div><div class="small muted">${A.over.length} NDC${A.over.length===1?'':'s'} over ${pct(S.opts.overPct-1)} above the national average cost</div></div></div>`;
+  if(A.best.some(b=>b.gainYr>0.5)) h+=`<div class="card"><h2>Best NDC to stock</h2>${A.best.filter(b=>b.gainYr>0.5).slice(0,3).map(b=>`<div class="list-item" data-tab="best"><div class="row"><b>${esc(b.group)}</b><span class="good">+${$f(b.gainYr,0)}/yr</span></div><div class="small muted">Stock ${fmtNdc(b.top.ndc)} · ${b.conf.toLowerCase()} confidence</div></div>`).join('')}</div>`;
   const top=A.switches.slice(0,3);
-  if(top.length) h+=`<div class="card"><h2>Top moves</h2>${top.map(s=>`<div class="list-item" data-group="${esc(s.group)}"><div class="row"><b>${esc(s.group)}</b><span class="good">+${$f(s.gainYr,0)}/yr</span></div><div class="small muted">${esc(s.plan)}: dispense ${fmtNdc(s.best.ndc)} instead of ${fmtNdc(s.cur.ndc)}</div></div>`).join('')}</div>`;
+  if(top.length) h+=`<div class="card"><h2>Top moves by plan</h2>${top.map(s=>`<div class="list-item" data-group="${esc(s.group)}"><div class="row"><b>${esc(s.group)}</b><span class="good">+${$f(s.gainYr,0)}/yr</span></div><div class="small muted">${esc(s.plan)}: dispense ${fmtNdc(s.best.ndc)} instead of ${fmtNdc(s.cur.ndc)}</div></div>`).join('')}</div>`;
   h+=`<div class="card small muted"><b>Ground rules this tool follows:</b> it only learns from claims you actually filled and got paid on. It never suggests test claims or billing a different NDC than the one you dispensed. To capture a switch, change what you <i>stock and dispense</i>, then bill that NDC.</div>`;
+  return h;
+}
+
+function vBest(){
+  let h=banner()+windowLine();
+  h+=`<div class="small muted" style="margin-bottom:10px">One recommendation per drug: the NDC that makes the most across <b>all</b> your plans, weighted by how much each plan fills. Uses real paid amounts where you have them; where a plan has never paid for that NDC, it assumes the plan pays its usual rate for the drug (marked “est.”).</div>`;
+  if(!A.best.length) return h+`<div class="card empty">No better NDC found. You're already stocking the best one for each drug, or there's only one NDC with a known cost.</div>`;
+  for(const b of A.best){
+    const t=b.top; const confC=b.conf==='High'?'g':b.conf==='Medium'?'w':'b';
+    h+=`<div class="card"><div class="row"><h3>${esc(b.group)}</h3><span class="big good">${b.gainYr>0.5?'+'+$f(b.gainYr,0)+'<span class="small muted">/yr</span>':''}</span></div>
+    <div style="margin:6px 0"><span class="pill g">${t.ndc===b.nowNdc?'Keep stocking':'Stock'} ${fmtNdc(t.ndc)}</span><span class="pill ${confC}">${b.conf} confidence · ${pct(t.actualShare)} of volume from real payments</span></div>
+    <div class="small muted">Now mostly dispensing ${fmtNdc(b.nowNdc)}. Cost of ${fmtNdc(t.ndc)}: ${$u(t.costU)}/unit (${t.src}).</div>
+    <div class="scroll" style="margin-top:8px"><table><tr><th>Plan</th><th class="n">Share</th><th class="n">Profit/unit with ${fmtNdc(t.ndc)}</th></tr>
+    ${t.per.map(p=>`<tr><td>${esc(p.plan)}</td><td class="n">${pct(p.units/b.totU)}</td><td class="n ${p.mU<0?'badc':''}">${$u(p.mU)}${p.est?' <span class="muted">est.</span>':''}</td></tr>`).join('')}</table></div>
+    ${b.mixGainYr>b.gainYr*1.1+5?`<div class="banner info" style="margin:10px 0 0">Stocking two NDCs and choosing by plan could make <b>+${$f(b.mixGainYr,0)}/yr</b>. See <a href="#" data-tab="switch">Switch NDCs</a> for which plan gets which.</div>`:''}
+    ${b.maybe?`<div class="banner" style="margin:10px 0 0">Worth testing: ${fmtNdc(b.maybe.ndc)} (cost ${$u(b.maybe.costU)}/unit) could add about <b>+${$f(b.maybe.extraYr,0)}/yr</b> more, but your plans have never paid for it. Use it on a few real fills and the estimate becomes real data.</div>`:''}
+    ${b.runner.length?`<details><summary>Other NDCs compared</summary><div class="small" style="margin-top:6px">${b.runner.map(r=>`${fmtNdc(r.ndc)} · ${$f(r.prof*A.annual,0)}/yr total profit · ${pct(r.actualShare)} real data`).join('<br>')}</div></details>`:''}
+    </div>`;
+  }
+  h+=`<div class="card small muted">“est.” rows assume the plan pays the same per unit no matter which NDC you use. That's true for most generics, but plans that price off AWP pay more for some NDCs, so confirm with a few real fills before switching your whole stock.</div>`;
   return h;
 }
 
@@ -610,7 +659,7 @@ function bindReject(){
 
 function render(){
   renderTabs();
-  const v={overview:vOverview,switch:vSwitch,losing:vLosing,over:vOver,lookup:vLookup,reject:vReject,data:vData}[S.tab];
+  const v={overview:vOverview,best:vBest,switch:vSwitch,losing:vLosing,over:vOver,lookup:vLookup,reject:vReject,data:vData}[S.tab];
   $('#app').innerHTML=v();
   bind();
 }
