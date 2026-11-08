@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pharmacy Profit Finder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root{
+  --bg:#f4f6f5;--card:#fff;--ink:#14201b;--muted:#5d6b65;--line:#dde4e0;
+  --accent:#0f7a5c;--accent-soft:#e2f3ec;--bad:#b4372f;--bad-soft:#fbe9e7;--warn:#9a6400;--warn-soft:#fdf2dc;
+  --chip:#eef2f0;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1513;--card:#18201d;--ink:#e6eeea;--muted:#93a39c;--line:#2a3531;
+  --accent:#3ccf9f;--accent-soft:#163a2e;--bad:#f07a70;--bad-soft:#3a1f1c;--warn:#f0b54a;--warn-soft:#3a2e15;--chip:#222c28;
+}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:18px 16px 8px;max-width:900px;margin:auto}
+h1{font-size:21px;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+nav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+nav .in{display:flex;gap:6px;overflow-x:auto;padding:8px 12px;max-width:900px;margin:auto;scrollbar-width:none}
+nav button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 13px;border-radius:999px;font:inherit;font-size:14px}
+nav button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+main{max-width:900px;margin:auto;padding:12px 12px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h2{font-size:16px;margin:0 0 6px}
+.card h3{font-size:15px;margin:0}
+.muted{color:var(--muted)}.small{font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+@media(min-width:640px){.kpis{grid-template-columns:repeat(4,1fr)}}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.kpi .v{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:12px;color:var(--muted)}
+.good{color:var(--accent)}.badc{color:var(--bad)}
+.pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted);margin:2px 4px 2px 0}
+.pill.g{background:var(--accent-soft);color:var(--accent)}.pill.b{background:var(--bad-soft);color:var(--bad)}.pill.w{background:var(--warn-soft);color:var(--warn)}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.big{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.box{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px}
+.box b{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.box.best{border-color:var(--accent);background:var(--accent-soft)}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:12px}
+td.n,th.n{text-align:right}
+.scroll{overflow-x:auto}
+.btn{display:inline-block;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:9px 14px;border-radius:10px;font:inherit;font-size:14px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.sm{padding:5px 10px;font-size:13px}
+input[type=search],input[type=number],select{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);width:100%}
+label.up{display:block;border:1.5px dashed var(--line);border-radius:12px;padding:12px;margin-top:8px;cursor:pointer}
+label.up input{display:block;margin-top:6px;font-size:13px;max-width:100%}
+.status{font-size:13px;margin-top:6px}
+.banner{border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px;background:var(--warn-soft);color:var(--warn)}
+.banner a{color:inherit;font-weight:600}
+.banner.info{background:var(--accent-soft);color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-top:8px}
+pre{white-space:pre-wrap;font-size:12px;background:var(--chip);padding:8px;border-radius:8px;overflow-x:auto}
+.empty{text-align:center;padding:24px 10px;color:var(--muted)}
+.list-item{padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.list-item:last-child{border-bottom:0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pharmacy Profit Finder</h1>
+  <div class="sub">Your paid claims + NADAC + wholesaler costs → what to stock, what's losing money, and what you're overpaying for.</div>
+</header>
+<nav><div class="in" id="tabs"></div></nav>
+<main id="app"></main>
+
+<script id="core">
+// ---------- Core logic (no DOM) ----------
+const Core = (() => {
+  const normHeader = h => String(h||'').toLowerCase().replace(/[^a-z0-9#]+/g,' ').trim();
+  function findCol(headers, aliases){
+    const hs = headers.map(normHeader);
+    for (const a of aliases){ const i = hs.indexOf(a); if (i>=0) return headers[i]; }
+    for (const a of aliases){ const i = hs.findIndex(h => h.includes(a)); if (i>=0) return headers[i]; }
+    return null;
+  }
+  function normNdc(s){
+    s = String(s==null?'':s).trim(); if(!s) return '';
+    if (s.includes('-')){
+      const p = s.split('-');
+      if (p.length===3) return p[0].replace(/\D/g,'').padStart(5,'0')+p[1].replace(/\D/g,'').padStart(4,'0')+p[2].replace(/\D/g,'').padStart(2,'0');
+    }
+    const d = s.replace(/\D/g,'');
+    if (!d) return '';
+    return d.length>=11 ? d.slice(0,11) : d.padStart(11,'0');
+  }
+  function money(v){
+    if (v==null) return NaN; let s = String(v).trim(); if(!s) return NaN;
+    let neg = /^\(.*\)$/.test(s); s = s.replace(/[()$,\s]/g,'');
+    const n = parseFloat(s); return neg ? -n : n;
+  }
+  const normGroup = s => String(s||'').toUpperCase().replace(/\s+/g,' ').trim();
+  function parseDate(v){
+    if (v instanceof Date) return v;
+    const s = String(v||'').trim(); if(!s) return null;
+    let m = s.match(/^(\d{4})(\d{2})(\d{2})$/); if (m) return new Date(+m[1],+m[2]-1,+m[3]);
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y,+m[1]-1,+m[2]); }
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1],+m[2]-1,+m[3]);
+    const d = new Date(s); return isNaN(d) ? null : d;
+  }
+
+  const CLAIM_COLS = {
+    date:['fill date','date filled','date of service','service date','dos','fill_date','date'],
+    rx:['rx #','rx#','rx number','rx no','prescription number','rx'],
+    plan:['plan name','plan','payer name','payer','insurance','third party','primary plan','bin'],
+    pcn:['pcn'],
+    ndc:['ndc dispensed','dispensed ndc','ndc11','ndc'],
+    drug:['drug name','drug description','ndc description','drug','medication','description'],
+    group:['gpi','gcn seq','gcn','product group','generic group','group key'],
+    qty:['metric quantity','metric qty','qty dispensed','quantity dispensed','quantity','qty'],
+    total:['total paid','total reimbursement','total amount paid','total received','total'],
+    planPaid:['plan paid','insurance paid','third party paid','amount paid','paid amount','reimbursement','paid'],
+    copay:['patient pay','patient paid','copay','co pay','pt pay','patient responsibility']
+  };
+  function mapClaims(rows, headers){
+    const c = {}; for (const k in CLAIM_COLS) c[k] = findCol(headers, CLAIM_COLS[k]);
+    if (c.group && /group/.test(normHeader(c.group)) && !/gpi|gcn|product|generic/.test(normHeader(c.group))) c.group=null;
+    const missing = ['ndc','qty','plan'].filter(k=>!c[k]); if (!c.total && !c.planPaid) missing.push('paid amount');
+    if (missing.length) return {error:'Missing columns: '+missing.join(', '), cols:c};
+    const out=[];
+    for (const r of rows){
+      const ndc = normNdc(r[c.ndc]); const qty = money(r[c.qty]);
+      if (!ndc || !(qty>0)) continue;
+      let rev = c.total ? money(r[c.total]) : (money(r[c.planPaid])||0) + (c.copay ? (money(r[c.copay])||0) : 0);
+      if (isNaN(rev)) continue;
+      let plan = String(r[c.plan]||'').trim(); if (c.pcn && /bin/.test(normHeader(c.plan))) plan += ' / '+String(r[c.pcn]||'').trim();
+      out.push({date:c.date?parseDate(r[c.date]):null, rx:c.rx?String(r[c.rx]||''):'', plan:plan||'(no plan)', ndc,
+        drug:c.drug?String(r[c.drug]||'').trim():'', group:c.group?normGroup(r[c.group]):'', qty, rev});
+    }
+    return {rows:out, cols:c};
+  }
+
+  const COST_COLS = {
+    ndc:['ndc11','ndc','item ndc'],
+    desc:['description','item description','drug name','product','drug'],
+    unit:['unit cost','cost per unit','price per unit','unit price','per unit'],
+    pack:['invoice cost','package cost','acquisition cost','contract price','net cost','cost','price'],
+    size:['package size','pkg size','pack size','package quantity','pkg qty','size','unit count']
+  };
+  function mapCosts(rows, headers){
+    const c={}; for (const k in COST_COLS) c[k]=findCol(headers, COST_COLS[k]);
+    if (c.pack && c.unit && c.pack===c.unit) c.pack=null;
+    if (!c.ndc || !(c.unit || (c.pack && c.size))) return {error:'Need an NDC column plus either a unit cost, or a package cost and package size.', cols:c};
+    const m=new Map();
+    for (const r of rows){
+      const ndc=normNdc(r[c.ndc]); if(!ndc) continue;
+      let u = c.unit ? money(r[c.unit]) : NaN;
+      if (!(u>0) && c.pack && c.size){ const p=money(r[c.pack]), s=money(r[c.size]); if(p>0&&s>0) u=p/s; }
+      if (u>0) m.set(ndc,{unit:u, desc:c.desc?String(r[c.desc]||'').trim():''});
+    }
+    return {map:m, cols:c};
+  }
+
+  // NADAC: keep newest row per NDC
+  function nadacAccumulator(){
+    const m=new Map(); let cols=null, asOfMax=null;
+    return {
+      add(rows, headers){
+        if(!cols){ cols={ndc:findCol(headers,['ndc']), desc:findCol(headers,['ndc description','description']),
+          unit:findCol(headers,['nadac per unit','nadac_per_unit']), eff:findCol(headers,['effective date']),
+          pu:findCol(headers,['pricing unit']), asof:findCol(headers,['as of date'])};
+          if(!cols.ndc||!cols.unit) throw new Error('This does not look like a NADAC file (need NDC and NADAC Per Unit columns).');
+        }
+        for(const r of rows){
+          const ndc=normNdc(r[cols.ndc]); const u=money(r[cols.unit]); if(!ndc||!(u>=0)) continue;
+          const asof = cols.asof?parseDate(r[cols.asof]):null; const eff=cols.eff?parseDate(r[cols.eff]):null;
+          const key=(asof?asof.getTime():0)*1e0 + (eff?eff.getTime()/1e13:0);
+          const prev=m.get(ndc);
+          if(!prev || key>=prev.key) m.set(ndc,{unit:u, desc:cols.desc?String(r[cols.desc]||'').trim():'', pu:cols.pu?String(r[cols.pu]||''):'', eff, key});
+          if(asof && (!asOfMax||asof>asOfMax)) asOfMax=asof;
+        }
+      },
+      result(){ return {map:m, asOf:asOfMax}; }
+    };
+  }
+
+  function groupOf(ndc, claimGroup, claimDrug, nadac, costs){
+    if (claimGroup) return claimGroup;
+    const n=nadac.get(ndc); if(n&&n.desc) return normGroup(n.desc);
+    if (claimDrug) return normGroup(claimDrug);
+    const c=costs.get(ndc); if(c&&c.desc) return normGroup(c.desc);
+    return 'NDC '+ndc;
+  }
+
+  function analyze(data, opts){
+    const {claims, nadac, costs} = data; const weeks=opts.weeks||6, minClaims=opts.minClaims||2;
+    const dated = claims.filter(c=>c.date);
+    const maxD = dated.length? new Date(Math.max(...dated.map(c=>c.date.getTime()))) : null;
+    const cutoff = maxD ? new Date(maxD.getTime()-weeks*7*864e5) : null;
+    const inWin = claims.filter(c=>!cutoff || !c.date || c.date>cutoff);
+    const annual = 52/weeks;
+    const costOf = ndc => { const c=costs.get(ndc); if(c) return {u:c.unit,src:'wholesaler'}; const n=nadac.get(ndc); if(n) return {u:n.unit,src:'NADAC'}; return null; };
+    const ndcGroup = new Map();
+    const agg = new Map(); // group|plan|ndc
+    let tot={fills:0,rev:0,cost:0,costKnown:0,losing:0};
+    for (const c of inWin){
+      const g = groupOf(c.ndc,c.group,c.drug,nadac,costs); ndcGroup.set(c.ndc,g);
+      const k=g+'\u0001'+c.plan+'\u0001'+c.ndc;
+      let a=agg.get(k); if(!a){ a={group:g,plan:c.plan,ndc:c.ndc,units:0,rev:0,fills:0,cost:null,costSrc:null,drug:c.drug}; agg.set(k,a);}
+      a.units+=c.qty; a.rev+=c.rev; a.fills++;
+      const co=costOf(c.ndc);
+      tot.fills++; tot.rev+=c.rev;
+      if(co){ a.cost=(a.cost||0)+co.u*c.qty; a.costSrc=co.src; tot.cost+=co.u*c.qty; tot.costKnown++; if(c.rev-co.u*c.qty<0) tot.losing++; }
+    }
+    for (const ndc of costs.keys()) if(!ndcGroup.has(ndc)) ndcGroup.set(ndc, groupOf(ndc,'','',nadac,costs));
+    const byGP = new Map();
+    for (const a of agg.values()){
+      a.revU=a.rev/a.units; a.costU=a.cost!=null?a.cost/a.units:null; a.marginU=a.costU!=null?a.revU-a.costU:null;
+      a.nadacU = nadac.has(a.ndc)?nadac.get(a.ndc).unit:null; a.avgQty=a.units/a.fills;
+      const k=a.group+'\u0001'+a.plan; if(!byGP.has(k)) byGP.set(k,{group:a.group,plan:a.plan,ndcs:[]}); byGP.get(k).ndcs.push(a);
+    }
+    const groupNdcs = new Map(); for(const [ndc,g] of ndcGroup){ if(!groupNdcs.has(g)) groupNdcs.set(g,new Set()); groupNdcs.get(g).add(ndc); }
+
+    const switches=[], losing=[];
+    for (const gp of byGP.values()){
+      gp.ndcs.sort((x,y)=>y.units-x.units);
+      const cur=gp.ndcs[0];
+      const elig=gp.ndcs.filter(n=>n.fills>=minClaims && n.marginU!=null);
+      const best=elig.slice().sort((x,y)=>y.marginU-x.marginU)[0];
+      const billed=new Set(gp.ndcs.map(n=>n.ndc));
+      const untested=[...(groupNdcs.get(gp.group)||[])].filter(n=>!billed.has(n)).map(n=>({ndc:n,costU:costOf(n)?.u??null,src:costOf(n)?.src}));
+      if (best && cur.marginU!=null && best.ndc!==cur.ndc && best.marginU-cur.marginU>0.0005){
+        const gain=(best.marginU-cur.marginU)*cur.units;
+        switches.push({group:gp.group,plan:gp.plan,cur,best,gainWin:gain,gainYr:gain*annual,untested});
+      }
+      const units=gp.ndcs.reduce((s,n)=>s+n.units,0), rev=gp.ndcs.reduce((s,n)=>s+n.rev,0);
+      const known=gp.ndcs.filter(n=>n.cost!=null);
+      if(known.length){
+        const cost=known.reduce((s,n)=>s+n.cost,0), krev=known.reduce((s,n)=>s+n.rev,0), fills=known.reduce((s,n)=>s+n.fills,0);
+        const m=krev-cost;
+        if (m<0){
+          const belowNadac=gp.ndcs.filter(n=>n.nadacU!=null && n.revU<n.nadacU);
+          losing.push({group:gp.group,plan:gp.plan,fills,lossWin:-m,lossYr:-m*annual,perFill:m/fills,belowNadac,ndcs:gp.ndcs, fix: switches.find(s=>s.group===gp.group&&s.plan===gp.plan)});
+        }
+      }
+    }
+    switches.sort((a,b)=>b.gainYr-a.gainYr); losing.sort((a,b)=>b.lossYr-a.lossYr);
+
+    // overpaying vs NADAC
+    const unitsByNdc=new Map(); for(const c of inWin) unitsByNdc.set(c.ndc,(unitsByNdc.get(c.ndc)||0)+c.qty);
+    const over=[];
+    for (const [ndc,c] of costs){
+      const n=nadac.get(ndc); if(!n||!(n.unit>0)) continue;
+      const ratio=c.unit/n.unit; if(ratio<=opts.overPct) continue;
+      const u=unitsByNdc.get(ndc)||0;
+      over.push({ndc,group:ndcGroup.get(ndc),cost:c.unit,nadac:n.unit,ratio,units:u,extraYr:(c.unit-n.unit)*u*annual});
+    }
+    over.sort((a,b)=>b.extraYr-a.extraYr||b.ratio-a.ratio);
+
+    const groups=[...new Set([...byGP.values()].map(g=>g.group))].sort();
+    return {tot, switches, losing, over, byGP:[...byGP.values()], groups, groupNdcs, maxD, cutoff, weeks, annual, inWinCount:inWin.length, costOf};
+  }
+
+  // ---------- Sample data (made up) ----------
+  function sample(){
+    let seed=42; const rnd=()=>{seed=(seed*1103515245+12345)%2147483648; return seed/2147483648;};
+    const pick=(arr,w)=>{let r=rnd()*w.reduce((a,b)=>a+b,0); for(let i=0;i<arr.length;i++){r-=w[i]; if(r<=0) return arr[i];} return arr[arr.length-1];};
+    const plans=[{name:'Commercial Plan A',t:'mac',fee:1.00,adj:1.0,cp:[0,15]},{name:'Commercial Plan B',t:'awp',fee:1.50,cp:[0,12]},
+      {name:'Medicare Part D Plan C',t:'mac',fee:0.50,adj:0.85,cp:[0,8]},{name:'State Medicaid',t:'nadac',fee:10.50,cp:[0,1]}];
+    const D=[
+      ['ATORVASTATIN 40 MG TABLET','EA',[30,90],0.07,[['90001-0101-90',.045,.050,1.20,.6],['90002-0233-90',.090,.085,3.10,.3],['90003-0410-05',.160,.150,2.00,.1],['90004-0777-90',.035,.048,1.0,0]]],
+      ['LISINOPRIL 10 MG TABLET','EA',[30,90],0.030,[['90001-0202-10',.020,.022,0.60,.75],['90005-0118-10',.050,.045,0.90,.25]]],
+      ['METFORMIN HCL 500 MG TABLET','EA',[60,180],0.025,[['90006-0721-01',.018,.01845,0.40,.7],['90002-0301-01',.030,.028,1.10,.3]]],
+      ['AMLODIPINE BESYLATE 10 MG TAB','EA',[30,90],0.035,[['90001-0310-90',.025,.027,0.90,.5],['90007-0455-90',.040,.038,0.70,.5]]],
+      ['SERTRALINE HCL 100 MG TABLET','EA',[30,90],0.090,[['90008-0140-30',.060,.065,2.50,.65],['90002-0919-30',.120,.110,4.80,.35]]],
+      ['OMEPRAZOLE DR 20 MG CAPSULE','EA',[30,90],0.080,[['90009-0020-30',.070,.072,2.20,.9],['90005-0612-30',.050,.055,1.40,.1]]],
+      ['LEVOTHYROXINE 50 MCG TABLET','EA',[30,90],0.190,[['90010-0050-90',.220,.210,0.90,.7],['90011-0505-90',.300,.310,1.40,.3]]],
+      ['GABAPENTIN 300 MG CAPSULE','EA',[90,270],0.055,[['90001-0300-01',.040,.045,0.80,.6],['90012-0330-01',.090,.065,1.60,.4]]],
+      ['ALBUTEROL HFA 90 MCG INHALER','GM',[18],1.25,[['90013-0090-18',1.35,1.30,8.00,.7],['90014-0912-18',1.10,1.15,9.50,.3]]],
+      ['FLUTICASONE PROP 50 MCG SPRAY','GM',[16],0.62,[['90015-0050-16',.55,.58,3.40,.6],['90016-0516-16',.80,.75,4.60,.4]]]
+    ];
+    const nadac=new Map(), costs=new Map(), claims=[];
+    for(const [g,pu,,,ns] of D) for(const [ndc,cost,nd] of ns){ nadac.set(normNdc(ndc),{unit:nd,desc:g,pu,eff:null}); costs.set(normNdc(ndc),{unit:cost,desc:g}); }
+    const end=new Date(); end.setHours(12,0,0,0);
+    let rxn=600100;
+    for(let day=0; day<42; day++){
+      const dt=new Date(end.getTime()-day*864e5); const n=10+Math.floor(rnd()*14);
+      for(let i=0;i<n;i++){
+        const d=pick(D,[14,12,12,11,8,9,9,8,6,5]); const [g,,qtys,mac,ns]=d;
+        const live=ns.filter(x=>x[4]>0); const nd=pick(live,live.map(x=>x[4]));
+        const p=pick(plans,[30,25,30,15]); const qty=qtys[Math.floor(rnd()*qtys.length)];
+        let pu; if(p.t==='mac') pu=mac*p.adj; else if(p.t==='awp') pu=nd[3]*0.18; else pu=nd[2];
+        const rev=+(qty*pu+p.fee).toFixed(2);
+        claims.push({date:dt,rx:String(rxn++),plan:p.name,ndc:normNdc(nd[0]),drug:g,group:'',qty,rev});
+      }
+    }
+    return {claims,nadac,costs,nadacAsOf:null};
+  }
+  return {normNdc, money, parseDate, findCol, mapClaims, mapCosts, nadacAccumulator, analyze, sample};
+})();
+if (typeof module!=='undefined') module.exports=Core;
+</script>
+
+<script>
+// ---------- UI ----------
+const S = {
+  data:null, sampleMode:true, tab:'overview', q:'', openGroup:null,
+  opts:{weeks:6,minClaims:2,overPct:1.15},
+  claimsInfo:null, nadacInfo:null, costInfo:null,
+  real:{claims:null,nadac:null,costs:null,nadacAsOf:null}
+};
+try{ const o=JSON.parse(localStorage.getItem('ppf_opts')||'null'); if(o) Object.assign(S.opts,o);}catch(e){}
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $f=(n,d=2)=>n==null||isNaN(n)?'—':(n<0?'-':'')+'$'+Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const $u=n=>n==null||isNaN(n)?'—':'$'+n.toFixed(n<1?4:3);
+const fmtNdc=n=>n&&n.length===11?n.slice(0,5)+'-'+n.slice(5,9)+'-'+n.slice(9):n;
+const pct=n=>(n*100).toFixed(0)+'%';
+const TABS=[['overview','Overview'],['switch','Switch NDCs'],['losing','Losing money'],['over','Overpaying'],['lookup','Drug lookup'],['data','Your data']];
+
+function currentData(){
+  if(S.sampleMode) return S.sample||(S.sample=Core.sample());
+  const r=S.real; return {claims:r.claims||[], nadac:r.nadac||new Map(), costs:r.costs||new Map(), nadacAsOf:r.nadacAsOf};
+}
+let A=null;
+function recompute(){ A=Core.analyze(currentData(), S.opts); render(); }
+
+function renderTabs(){
+  $('#tabs').innerHTML=TABS.map(([k,l])=>{
+    let badge=''; if(A){ if(k==='switch'&&A.switches.length) badge=' · '+A.switches.length; if(k==='losing'&&A.losing.length) badge=' · '+A.losing.length; if(k==='over'&&A.over.length) badge=' · '+A.over.length; }
+    return `<button class="${S.tab===k?'on':''}" data-tab="${k}">${l}${badge}</button>`;}).join('');
+}
+function banner(){
+  if(S.sampleMode) return `<div class="banner">You're looking at <b>made-up sample data</b> (10 generics, 4 plans, 6 weeks). Load your own files in <a href="#" data-tab="data">Your data</a>.</div>`;
+  const d=currentData(); const miss=[]; if(!d.claims.length) miss.push('claims'); if(!d.costs.size) miss.push('wholesaler costs'); if(!d.nadac.size) miss.push('NADAC');
+  return miss.length?`<div class="banner">Missing: ${miss.join(', ')}. Results use what's loaded; cost falls back to NADAC when there's no wholesaler price.</div>`:'';
+}
+function windowLine(){
+  if(!A.maxD) return '';
+  return `<div class="small muted" style="margin-bottom:10px">Last ${A.weeks} weeks of claims (${A.cutoff.toLocaleDateString()} – ${A.maxD.toLocaleDateString()}) · yearly figures = that pace × ${A.annual.toFixed(1)}</div>`;
+}
+
+function vOverview(){
+  const t=A.tot; const gm=t.rev-t.cost; const opp=A.switches.reduce((s,x)=>s+x.gainYr,0); const loss=A.losing.reduce((s,x)=>s+x.lossYr,0); const ov=A.over.reduce((s,x)=>s+x.extraYr,0);
+  if(!t.fills) return banner()+`<div class="card empty">No claims loaded yet.<br><br><button class="btn" data-tab="data">Load your data</button></div>`;
+  let h=banner()+windowLine()+`<div class="kpis">
+    <div class="kpi"><div class="v">${t.fills.toLocaleString()}</div><div class="l">Paid fills</div></div>
+    <div class="kpi"><div class="v">${$f(t.rev,0)}</div><div class="l">Collected (plan + copay)</div></div>
+    <div class="kpi"><div class="v ${gm<0?'badc':''}">${$f(gm,0)}</div><div class="l">Gross profit${t.costKnown<t.fills?' (fills with a known cost)':''}</div></div>
+    <div class="kpi"><div class="v ${t.losing?'badc':''}">${t.costKnown?pct(t.losing/t.costKnown):'—'}</div><div class="l">Fills that lost money</div></div></div>`;
+  h+=`<div class="card"><h2>Money on the table (per year, at this pace)</h2>
+   <div class="list-item" data-tab="switch"><div class="row"><span>Dispense the better-paying NDC</span><span class="big good">${$f(opp,0)}</span></div><div class="small muted">${A.switches.length} drug + plan combos</div></div>
+   <div class="list-item" data-tab="losing"><div class="row"><span>Drug + plan combos losing money</span><span class="big badc">${$f(-loss,0)}</span></div><div class="small muted">${A.losing.length} combos · some fixable by switching, others need an appeal</div></div>
+   <div class="list-item" data-tab="over"><div class="row"><span>Paying well above NADAC</span><span class="big" style="color:var(--warn)">${$f(ov,0)}</span></div><div class="small muted">${A.over.length} NDC${A.over.length===1?'':'s'} over ${pct(S.opts.overPct-1)} above the national average cost</div></div></div>`;
+  const top=A.switches.slice(0,3);
+  if(top.length) h+=`<div class="card"><h2>Top moves</h2>${top.map(s=>`<div class="list-item" data-group="${esc(s.group)}"><div class="row"><b>${esc(s.group)}</b><span class="good">+${$f(s.gainYr,0)}/yr</span></div><div class="small muted">${esc(s.plan)}: dispense ${fmtNdc(s.best.ndc)} instead of ${fmtNdc(s.cur.ndc)}</div></div>`).join('')}</div>`;
+  h+=`<div class="card small muted"><b>Ground rules this tool follows:</b> it only learns from claims you actually filled and got paid on. It never suggests test claims or billing a different NDC than the one you dispensed. To capture a switch, change what you <i>stock and dispense</i>, then bill that NDC.</div>`;
+  return h;
+}
+
+function vSwitch(){
+  let h=banner()+windowLine();
+  if(!A.switches.length) return h+`<div class="card empty">No switch opportunities found. Each NDC needs at least ${S.opts.minClaims} paid fills with a plan before it's compared.</div>`;
+  h+=`<div class="small muted" style="margin-bottom:10px">For each drug and plan: the NDC you dispense most vs. the one that left the most profit per unit, based on what that plan actually paid you.</div>`;
+  for(const s of A.switches){
+    const per=(s.best.marginU-s.cur.marginU)*s.cur.avgQty;
+    h+=`<div class="card"><div class="row"><h3>${esc(s.group)}</h3><span class="big good">+${$f(s.gainYr,0)}<span class="small muted">/yr</span></span></div>
+    <div class="small muted">${esc(s.plan)} · ${s.cur.fills} fills of current NDC · about +${$f(per)} per ${Math.round(s.cur.avgQty)}-unit fill</div>
+    <div class="cmp"><div class="box"><b>Now: ${fmtNdc(s.cur.ndc)}</b>Paid ${$u(s.cur.revU)}/unit<br>Cost ${$u(s.cur.costU)}/unit<br>Profit <b style="display:inline;color:inherit;font-weight:650">${$u(s.cur.marginU)}</b>/unit</div>
+    <div class="box best"><b>Switch to: ${fmtNdc(s.best.ndc)}</b>Paid ${$u(s.best.revU)}/unit<br>Cost ${$u(s.best.costU)}/unit<br>Profit <b style="display:inline;color:inherit;font-weight:650">${$u(s.best.marginU)}</b>/unit</div></div>
+    <div class="small muted" style="margin-top:6px">Based on ${s.best.fills} paid fills of ${fmtNdc(s.best.ndc)} with this plan. Cost from ${s.best.costSrc}.</div>
+    ${s.untested.length?`<details><summary>${s.untested.length} other NDC${s.untested.length>1?'s':''} for this drug with no payment history from this plan yet</summary><div class="small" style="margin-top:6px">${s.untested.map(u=>`${fmtNdc(u.ndc)} · cost ${$u(u.costU)}/unit${u.src?' ('+u.src+')':''}`).join('<br>')}<div class="muted" style="margin-top:6px">You won't know what this plan pays for these until you fill a real prescription with them. Don't run test claims.</div></div></details>`:''}
+    </div>`;
+  }
+  return h;
+}
+
+function vLosing(){
+  let h=banner()+windowLine();
+  if(!A.losing.length) return h+`<div class="card empty">Nothing is losing money overall. 🎉</div>`;
+  for(const l of A.losing){
+    h+=`<div class="card"><div class="row"><h3>${esc(l.group)}</h3><span class="big badc">${$f(-l.lossYr,0)}<span class="small muted">/yr</span></span></div>
+    <div class="small muted">${esc(l.plan)} · ${l.fills} fills · ${$f(l.perFill)} per fill</div>
+    <div style="margin-top:6px">${l.fix?`<span class="pill g">Fix: switch to ${fmtNdc(l.fix.best.ndc)}</span>`:''}${l.belowNadac.length?`<span class="pill w">Paid below NADAC → consider a MAC appeal</span>`:''}${!l.fix&&!l.belowNadac.length?`<span class="pill b">Plan pays below your cost on every NDC you've used</span>`:''}</div>
+    <div class="scroll" style="margin-top:8px"><table><tr><th>NDC</th><th class="n">Fills</th><th class="n">Paid/unit</th><th class="n">Cost/unit</th><th class="n">NADAC</th></tr>
+    ${l.ndcs.map(n=>`<tr><td>${fmtNdc(n.ndc)}</td><td class="n">${n.fills}</td><td class="n">${$u(n.revU)}</td><td class="n ${n.marginU<0?'badc':''}">${$u(n.costU)}</td><td class="n">${$u(n.nadacU)}</td></tr>`).join('')}</table></div></div>`;
+  }
+  h+=`<div class="card small muted">A MAC appeal asks the PBM to raise its maximum allowable cost when it pays less than you can buy the drug for. Keep the invoice showing your cost; each PBM has its own appeal form and deadline.</div>`;
+  return h;
+}
+
+function vOver(){
+  let h=banner()+windowLine();
+  h+=`<div class="card"><div class="row"><span class="small">Flag when my cost is more than</span><select id="overPct" style="width:auto">${[1.05,1.1,1.15,1.25,1.5].map(v=>`<option value="${v}" ${v==S.opts.overPct?'selected':''}>${pct(v-1)} above NADAC</option>`).join('')}</select></div></div>`;
+  if(!A.over.length) return h+`<div class="card empty">No NDCs above that threshold, or no NDCs that appear in both your wholesaler file and NADAC.</div>`;
+  h+=`<div class="card"><div class="small muted" style="margin-bottom:6px">NADAC is what pharmacies pay on average nationwide. Paying a lot more usually means a better price exists from another wholesaler, a different source contract, or a different NDC.</div><div class="scroll"><table><tr><th>Drug / NDC</th><th class="n">Your cost</th><th class="n">NADAC</th><th class="n">Over</th><th class="n">Extra/yr</th></tr>
+  ${A.over.map(o=>`<tr><td>${esc(o.group||'')}<div class="muted">${fmtNdc(o.ndc)}</div></td><td class="n">${$u(o.cost)}</td><td class="n">${$u(o.nadac)}</td><td class="n" style="color:var(--warn)">+${pct(o.ratio-1)}</td><td class="n">${o.units?$f(o.extraYr,0):'<span class="muted">not filled</span>'}</td></tr>`).join('')}</table></div></div>`;
+  return h;
+}
+
+function vLookup(){
+  let h=banner()+`<div class="card"><input type="search" id="q" placeholder="Search a drug (e.g. atorvastatin)" value="${esc(S.q)}"></div>`;
+  const q=S.q.trim().toUpperCase();
+  const groups=A.groups.filter(g=>!q||g.includes(q));
+  if(S.openGroup){
+    const g=S.openGroup; const rows=A.byGP.filter(x=>x.group===g);
+    h+=`<div class="card"><div class="row"><h2>${esc(g)}</h2><button class="btn ghost sm" id="back">Back</button></div>`;
+    const ndcs=[...(A.groupNdcs.get(g)||[])];
+    const d=currentData();
+    h+=`<div class="scroll"><table><tr><th>NDC you can buy</th><th class="n">Your cost</th><th class="n">NADAC</th></tr>${ndcs.map(n=>`<tr><td>${fmtNdc(n)}</td><td class="n">${$u(d.costs.get(n)?.unit)}</td><td class="n">${$u(d.nadac.get(n)?.unit)}</td></tr>`).join('')}</table></div></div>`;
+    for(const r of rows){
+      const best=r.ndcs.filter(n=>n.marginU!=null&&n.fills>=S.opts.minClaims).sort((a,b)=>b.marginU-a.marginU)[0];
+      h+=`<div class="card"><h3>${esc(r.plan)}</h3><div class="scroll"><table><tr><th>NDC</th><th class="n">Fills</th><th class="n">Paid/unit</th><th class="n">Profit/unit</th><th class="n">Profit/fill</th></tr>
+      ${r.ndcs.map(n=>`<tr><td>${fmtNdc(n.ndc)}${best&&best.ndc===n.ndc&&r.ndcs.length>1?' <span class="pill g">best</span>':''}</td><td class="n">${n.fills}</td><td class="n">${$u(n.revU)}</td><td class="n ${n.marginU<0?'badc':''}">${$u(n.marginU)}</td><td class="n ${n.marginU<0?'badc':''}">${n.marginU==null?'—':$f(n.marginU*n.avgQty)}</td></tr>`).join('')}</table></div></div>`;
+    }
+    return h;
+  }
+  if(!groups.length) return h+`<div class="card empty">No drugs match.</div>`;
+  h+=`<div class="card">${groups.map(g=>{const rs=A.byGP.filter(x=>x.group===g); const fills=rs.reduce((s,r)=>s+r.ndcs.reduce((a,n)=>a+n.fills,0),0);
+    const flag=A.switches.some(s=>s.group===g)?'<span class="pill g">switch</span>':''; const bad=A.losing.some(s=>s.group===g)?'<span class="pill b">losing</span>':'';
+    return `<div class="list-item" data-group="${esc(g)}"><div class="row"><span>${esc(g)}</span><span class="small muted">${fills} fills</span></div>${flag}${bad}</div>`;}).join('')}</div>`;
+  return h;
+}
+
+const TEMPLATES={
+ claims:`Fill Date,Rx Number,Plan Name,NDC,Drug Name,Quantity,Plan Paid,Patient Pay
+11/02/2026,600123,Commercial Plan A,00093-7213-01,METFORMIN HCL 500 MG TABLET,60,2.50,0.00`,
+ costs:`NDC,Description,Package Size,Invoice Cost
+00093-7213-01,METFORMIN HCL 500 MG TABLET,1000,18.45`
+};
+function upStatus(info){ if(!info) return '<div class="status muted">Not loaded</div>'; if(info.error) return `<div class="status badc">${esc(info.error)}</div>`; if(info.busy) return `<div class="status muted">${esc(info.busy)}</div>`; return `<div class="status good">✓ ${esc(info.ok)}</div>`+(info.cols?`<details><summary>Columns used</summary><pre>${esc(Object.entries(info.cols).filter(([,v])=>v).map(([k,v])=>k+' ← '+v).join('\n'))}</pre></details>`:''); }
+function vData(){
+  return `<div class="card"><div class="row"><h2>Data source</h2></div>
+   <div class="grid2" style="margin-top:6px"><button class="btn ${S.sampleMode?'':'ghost'}" id="useSample">Sample data</button><button class="btn ${S.sampleMode?'ghost':''}" id="useReal">My files</button></div>
+   <div class="small muted" style="margin-top:8px">🔒 Files are read on this device only. This page can't send data anywhere, so nothing leaves your phone or computer.</div></div>
+
+  <div class="card"><h2>1 · Paid claims</h2><div class="small muted">Export from your pharmacy system's claims or reconciliation report as CSV. Needs NDC, quantity, plan, and amount paid (plan paid + patient pay, or a total). A fill date lets it look at recent weeks only. Leave patient names out; they aren't needed.</div>
+   <label class="up">Choose claims CSV<input type="file" accept=".csv,text/csv" id="fClaims"></label>${upStatus(S.claimsInfo)}
+   <details><summary>Example layout</summary><pre>${esc(TEMPLATES.claims)}</pre><button class="btn ghost sm" data-copy="claims">Copy</button></details></div>
+
+  <div class="card"><h2>2 · NADAC file</h2><div class="small muted">Download the latest NADAC CSV from CMS (free, updated weekly) and choose it here. The full-year file is large; it's read in chunks and only the newest price per NDC is kept.</div>
+   <div class="small" style="margin-top:6px"><a href="https://data.medicaid.gov/dataset/fbb83258-11c7-47f5-8b18-5f8e79f7e704" target="_blank" rel="noopener">NADAC 2026 on data.medicaid.gov</a></div>
+   <label class="up">Choose NADAC CSV<input type="file" accept=".csv,text/csv" id="fNadac"></label>${upStatus(S.nadacInfo)}</div>
+
+  <div class="card"><h2>3 · Wholesaler costs</h2><div class="small muted">Your price file or invoice history from McKesson, Cardinal, AmerisourceBergen/Cencora, etc. Needs NDC plus a unit cost, or a package cost and package size.</div>
+   <label class="up">Choose wholesaler CSV<input type="file" accept=".csv,text/csv" id="fCosts"></label>${upStatus(S.costInfo)}
+   <details><summary>Example layout</summary><pre>${esc(TEMPLATES.costs)}</pre><button class="btn ghost sm" data-copy="costs">Copy</button></details></div>
+
+  <div class="card"><h2>Settings</h2>
+   <div class="grid2"><label class="small">Weeks of claims to use<input type="number" id="oWeeks" min="1" max="52" value="${S.opts.weeks}"></label>
+   <label class="small">Min paid fills before comparing an NDC<input type="number" id="oMin" min="1" max="20" value="${S.opts.minClaims}"></label></div>
+   <div class="small muted" style="margin-top:8px">Quantities should be metric units (EA, ML, GM), the same units NADAC prices in.</div></div>`;
+}
+
+function render(){
+  renderTabs();
+  const v={overview:vOverview,switch:vSwitch,losing:vLosing,over:vOver,lookup:vLookup,data:vData}[S.tab];
+  $('#app').innerHTML=v();
+  bind();
+}
+function go(tab){ S.tab=tab; if(tab!=='lookup') S.openGroup=null; render(); window.scrollTo(0,0); }
+
+function readCsv(file, onChunk, onDone, onErr){
+  if(window.Papa){
+    let headers=null;
+    Papa.parse(file,{header:true,skipEmptyLines:true,worker:false,chunkSize:1024*1024*4,
+      chunk:(res)=>{ try{ headers=headers||res.meta.fields; onChunk(res.data,headers);}catch(e){ onErr(e); throw e; } },
+      complete:()=>onDone(), error:e=>onErr(e)});
+  } else {
+    file.text().then(t=>{ const rows=simpleCsv(t); const headers=rows.shift()||[]; onChunk(rows.map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]]))),headers); onDone(); }).catch(onErr);
+  }
+}
+function simpleCsv(t){ const out=[]; let row=[],f='',q=false; for(let i=0;i<t.length;i++){const c=t[i]; if(q){ if(c=='"'){ if(t[i+1]=='"'){f+='"';i++;} else q=false;} else f+=c; } else if(c=='"') q=true; else if(c==','){row.push(f);f='';} else if(c=='\n'||c=='\r'){ if(c=='\r'&&t[i+1]=='\n') i++; row.push(f); f=''; if(row.length>1||row[0]) out.push(row); row=[]; } else f+=c; } if(f||row.length){row.push(f); out.push(row);} return out; }
+
+function loadClaims(file){
+  S.claimsInfo={busy:'Reading…'}; render(); const all=[]; let hdr;
+  readCsv(file,(rows,h)=>{hdr=h; all.push(...rows);},()=>{
+    const r=Core.mapClaims(all,hdr||[]);
+    if(r.error){ S.claimsInfo={error:r.error}; }
+    else { S.real.claims=r.rows; S.claimsInfo={ok:`${r.rows.length.toLocaleString()} paid fills from ${file.name}`,cols:r.cols}; S.sampleMode=false; }
+    recompute();
+  },e=>{S.claimsInfo={error:String(e.message||e)}; render();});
+}
+function loadCosts(file){
+  S.costInfo={busy:'Reading…'}; render(); const all=[]; let hdr;
+  readCsv(file,(rows,h)=>{hdr=h; all.push(...rows);},()=>{
+    const r=Core.mapCosts(all,hdr||[]);
+    if(r.error) S.costInfo={error:r.error}; else { S.real.costs=r.map; S.costInfo={ok:`${r.map.size.toLocaleString()} NDC prices from ${file.name}`,cols:r.cols}; S.sampleMode=false; }
+    recompute();
+  },e=>{S.costInfo={error:String(e.message||e)}; render();});
+}
+function loadNadac(file){
+  S.nadacInfo={busy:'Reading… (big files take a minute)'}; render(); const acc=Core.nadacAccumulator(); let n=0, failed=false;
+  readCsv(file,(rows,h)=>{ acc.add(rows,h); n+=rows.length; },()=>{
+    if(failed) return; const r=acc.result(); S.real.nadac=r.map; S.real.nadacAsOf=r.asOf;
+    S.nadacInfo={ok:`${r.map.size.toLocaleString()} NDCs (${n.toLocaleString()} rows)${r.asOf?' · as of '+r.asOf.toLocaleDateString():''}`}; S.sampleMode=false; recompute();
+  },e=>{failed=true; S.nadacInfo={error:String(e.message||e)}; render();});
+}
+
+function bind(){
+  document.querySelectorAll('[data-tab]').forEach(el=>el.onclick=e=>{e.preventDefault(); go(el.dataset.tab);});
+  document.querySelectorAll('[data-group]').forEach(el=>el.onclick=()=>{S.openGroup=el.dataset.group; S.tab='lookup'; render(); window.scrollTo(0,0);});
+  const q=$('#q'); if(q){ q.oninput=()=>{S.q=q.value; S.openGroup=null; const pos=q.selectionStart; render(); const nq=$('#q'); nq.focus(); nq.setSelectionRange(pos,pos);}; }
+  const b=$('#back'); if(b) b.onclick=()=>{S.openGroup=null; render();};
+  const op=$('#overPct'); if(op) op.onchange=()=>{S.opts.overPct=+op.value; saveOpts(); recompute();};
+  const us=$('#useSample'); if(us) us.onclick=()=>{S.sampleMode=true; recompute();};
+  const ur=$('#useReal'); if(ur) ur.onclick=()=>{S.sampleMode=false; recompute();};
+  const fc=$('#fClaims'); if(fc) fc.onchange=()=>fc.files[0]&&loadClaims(fc.files[0]);
+  const fn=$('#fNadac'); if(fn) fn.onchange=()=>fn.files[0]&&loadNadac(fn.files[0]);
+  const fw=$('#fCosts'); if(fw) fw.onchange=()=>fw.files[0]&&loadCosts(fw.files[0]);
+  const ow=$('#oWeeks'); if(ow) ow.onchange=()=>{S.opts.weeks=Math.max(1,Math.min(52,+ow.value||6)); saveOpts(); recompute();};
+  const om=$('#oMin'); if(om) om.onchange=()=>{S.opts.minClaims=Math.max(1,+om.value||2); saveOpts(); recompute();};
+  document.querySelectorAll('[data-copy]').forEach(el=>el.onclick=async()=>{ try{ await navigator.clipboard.writeText(TEMPLATES[el.dataset.copy]); el.textContent='Copied'; }catch(e){ el.textContent='Copy blocked: select the text above'; } });
+}
+function saveOpts(){ try{ localStorage.setItem('ppf_opts',JSON.stringify(S.opts)); }catch(e){} }
+recompute();
+</script>
+</body>
+</html>
