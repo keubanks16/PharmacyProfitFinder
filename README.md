@@ -20,8 +20,10 @@ All files are read in the browser; nothing is uploaded anywhere. Sample (made-up
 ## Ground rules
 The tool only learns from real, dispensed, paid claims. It never suggests test claims or billing an NDC other than the one dispensed.
 
-## NADAC data
-Download the current CSV from [data.medicaid.gov](https://data.medicaid.gov/dataset/fbb83258-11c7-47f5-8b18-5f8e79f7e704) and load it on the **Your data** tab.
+## NADAC data (automatic)
+The **Update NADAC prices** GitHub Action (`.github/workflows/update-nadac.yml`) runs every Thursday after CMS posts new prices. It finds the newest yearly NADAC dataset on [data.medicaid.gov](https://data.medicaid.gov/dataset/fbb83258-11c7-47f5-8b18-5f8e79f7e704) (it switches to the 2027 dataset on its own), keeps the latest price per NDC, and commits `data/nadac.json`. The app loads that file automatically and shows which NDCs you use changed price that week.
+
+Run it by hand any time from **Actions → Update NADAC prices → Run workflow**. You can still upload a NADAC CSV on the **Your data** tab to override it.
 
 ## Local AI (optional)
 Install [Ollama](https://ollama.com) on a pharmacy PC, run `ollama pull llama3.1:8b`, and set `OLLAMA_ORIGINS` to this site's address (e.g. `https://keubanks16.github.io`). Open the tool from that PC and use **Rejections → Ask local AI**. Dates, long ID numbers and phone numbers are blanked out before anything is sent.

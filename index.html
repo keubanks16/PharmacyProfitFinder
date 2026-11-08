@@ -383,6 +383,12 @@ function vOverview(){
   if(A.best.some(b=>b.gainYr>0.5)) h+=`<div class="card"><h2>Best NDC to stock</h2>${A.best.filter(b=>b.gainYr>0.5).slice(0,3).map(b=>`<div class="list-item" data-tab="best"><div class="row"><b>${esc(b.group)}</b><span class="good">+${$f(b.gainYr,0)}/yr</span></div><div class="small muted">Stock ${fmtNdc(b.top.ndc)} · ${b.conf.toLowerCase()} confidence</div></div>`).join('')}</div>`;
   const top=A.switches.slice(0,3);
   if(top.length) h+=`<div class="card"><h2>Top moves by plan</h2>${top.map(s=>`<div class="list-item" data-group="${esc(s.group)}"><div class="row"><b>${esc(s.group)}</b><span class="good">+${$f(s.gainYr,0)}/yr</span></div><div class="small muted">${esc(s.plan)}: dispense ${fmtNdc(s.best.ndc)} instead of ${fmtNdc(s.cur.ndc)}</div></div>`).join('')}</div>`;
+  const ac=S.real.nadacAuto;
+  if(!S.sampleMode && ac && ac.changes && ac.changes.length){
+    const d=currentData(); const used=new Set([...d.claims.map(c=>c.ndc),...d.costs.keys()]);
+    const mine=ac.changes.filter(c=>used.has(c[0])).map(c=>({ndc:c[0],old:c[1],now:c[2],ch:(c[2]-c[1])/c[1]})).sort((a,b)=>Math.abs(b.ch)-Math.abs(a.ch));
+    h+=`<div class="card"><h2>NADAC changes this week</h2><div class="small muted">${ac.changes.length.toLocaleString()} NDCs moved 1%+ since ${ac.changesSince?Core.parseDate(ac.changesSince).toLocaleDateString():'last update'}; ${mine.length} are ones you dispense or buy.</div>${mine.length?`<div class="scroll" style="margin-top:6px"><table><tr><th>Drug / NDC</th><th class="n">Was</th><th class="n">Now</th><th class="n">Change</th></tr>${mine.slice(0,10).map(c=>`<tr><td>${esc(d.nadac.get(c.ndc)?.desc||'')}<div class="muted">${fmtNdc(c.ndc)}</div></td><td class="n">${$u(c.old)}</td><td class="n">${$u(c.now)}</td><td class="n ${c.ch<0?'badc':'good'}">${c.ch>0?'+':''}${(c.ch*100).toFixed(1)}%</td></tr>`).join('')}</table></div>`:''}</div>`;
+  }
   h+=`<div class="card small muted"><b>Ground rules this tool follows:</b> it only learns from claims you actually filled and got paid on. It never suggests test claims or billing a different NDC than the one you dispensed. To capture a switch, change what you <i>stock and dispense</i>, then bill that NDC.</div>`;
   return h;
 }
@@ -487,7 +493,7 @@ function vData(){
    <label class="up">Choose claims CSV<input type="file" accept=".csv,text/csv" id="fClaims"></label>${upStatus(S.claimsInfo)}
    <details><summary>Example layout</summary><pre>${esc(TEMPLATES.claims)}</pre><button class="btn ghost sm" data-copy="claims">Copy</button></details></div>
 
-  <div class="card"><h2>2 · NADAC file</h2><div class="small muted">Download the latest NADAC CSV from CMS (free, updated weekly) and choose it here. The full-year file is large; it's read in chunks and only the newest price per NDC is kept.</div>
+  <div class="card"><h2>2 · NADAC file</h2><div class="small muted">${S.real.nadacAuto?'Loaded automatically. A GitHub Action downloads the newest CMS file every Thursday, so there is nothing to do here. You can still upload a file to override it.':'Loads automatically on the GitHub Pages version (updated every Thursday from CMS). Here, download the latest NADAC CSV from CMS and choose it. Big files are read in chunks; only the newest price per NDC is kept.'}</div>
    <div class="small" style="margin-top:6px"><a href="https://data.medicaid.gov/dataset/fbb83258-11c7-47f5-8b18-5f8e79f7e704" target="_blank" rel="noopener">NADAC 2026 on data.medicaid.gov</a></div>
    <label class="up">Choose NADAC CSV<input type="file" accept=".csv,text/csv" id="fNadac"></label>${upStatus(S.nadacInfo)}</div>
 
@@ -657,6 +663,19 @@ function bindReject(){
   const cl=$('#rjClear'); if(cl) cl.onclick=()=>{ if(cl.dataset.sure){ rjSave([]); render(); } else { cl.dataset.sure=1; cl.textContent='Tap again to clear'; } };
 }
 
+
+async function autoNadac(){
+  try{
+    const res=await fetch('data/nadac.json',{cache:'no-cache'}); if(!res.ok) return;
+    const j=await res.json(); if(!j.rows||!j.rows.length) return;
+    if(S.real.nadac && !S.real.nadacAuto) return; // user uploaded their own
+    const m=new Map(); for(const [ndc,unit,desc,pu,eff] of j.rows) m.set(ndc,{unit,desc,pu,eff:eff?Core.parseDate(eff):null});
+    S.real.nadac=m; S.real.nadacAsOf=j.asOf?Core.parseDate(j.asOf):null; S.real.nadacAuto=j;
+    S.nadacInfo={ok:`Auto-updated from CMS weekly · prices as of ${S.real.nadacAsOf?S.real.nadacAsOf.toLocaleDateString():'?'} · ${j.count.toLocaleString()} NDCs`};
+    recompute();
+  }catch(e){}
+}
+
 function render(){
   renderTabs();
   const v={overview:vOverview,best:vBest,switch:vSwitch,losing:vLosing,over:vOver,lookup:vLookup,reject:vReject,data:vData}[S.tab];
@@ -697,7 +716,7 @@ function loadCosts(file){
 function loadNadac(file){
   S.nadacInfo={busy:'Reading… (big files take a minute)'}; render(); const acc=Core.nadacAccumulator(); let n=0, failed=false;
   readCsv(file,(rows,h)=>{ acc.add(rows,h); n+=rows.length; },()=>{
-    if(failed) return; const r=acc.result(); S.real.nadac=r.map; S.real.nadacAsOf=r.asOf;
+    if(failed) return; const r=acc.result(); S.real.nadac=r.map; S.real.nadacAsOf=r.asOf; S.real.nadacAuto=null;
     S.nadacInfo={ok:`${r.map.size.toLocaleString()} NDCs (${n.toLocaleString()} rows)${r.asOf?' · as of '+r.asOf.toLocaleDateString():''}`}; S.sampleMode=false; recompute();
   },e=>{failed=true; S.nadacInfo={error:String(e.message||e)}; render();});
 }
@@ -720,6 +739,7 @@ function bind(){
 }
 function saveOpts(){ try{ localStorage.setItem('ppf_opts',JSON.stringify(S.opts)); }catch(e){} }
 recompute();
+autoNadac();
 </script>
 </body>
 </html>
