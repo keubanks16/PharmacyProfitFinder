@@ -69,7 +69,7 @@ pre{white-space:pre-wrap;font-size:12px;background:var(--chip);padding:8px;borde
 <body>
 <header>
   <h1>Pharmacy Profit Finder</h1>
-  <div class="sub">Your paid claims + NADAC + wholesaler costs → what to stock, what's losing money, and what you're overpaying for.</div>
+  <div class="sub">Your paid claims + NADAC + wholesaler costs → what to stock, what's losing money, what you're overpaying for, and how to fix rejected claims.</div>
 </header>
 <nav><div class="in" id="tabs"></div></nav>
 <main id="app"></main>
@@ -316,7 +316,7 @@ const $f=(n,d=2)=>n==null||isNaN(n)?'—':(n<0?'-':'')+'$'+Math.abs(n).toLocaleS
 const $u=n=>n==null||isNaN(n)?'—':'$'+n.toFixed(n<1?4:3);
 const fmtNdc=n=>n&&n.length===11?n.slice(0,5)+'-'+n.slice(5,9)+'-'+n.slice(9):n;
 const pct=n=>(n*100).toFixed(0)+'%';
-const TABS=[['overview','Overview'],['switch','Switch NDCs'],['losing','Losing money'],['over','Overpaying'],['lookup','Drug lookup'],['data','Your data']];
+const TABS=[['overview','Overview'],['switch','Switch NDCs'],['losing','Losing money'],['over','Overpaying'],['lookup','Drug lookup'],['reject','Rejections'],['data','Your data']];
 
 function currentData(){
   if(S.sampleMode) return S.sample||(S.sample=Core.sample());
@@ -452,9 +452,165 @@ function vData(){
    <div class="small muted" style="margin-top:8px">Quantities should be metric units (EA, ML, GM), the same units NADAC prices in.</div></div>`;
 }
 
+// ---------- Rejection explainer ----------
+const RJ = {
+  '75':{t:'Prior authorization required',p:'The plan will only pay once the prescriber gets approval for this drug.',s:[
+    'Read the payer message: it often names a covered alternative that needs no PA. Offer it to the prescriber.',
+    'Medicare Part D and the patient is new to the plan or drug this plan year? Ask the plan for a transition fill.',
+    'Start the PA (CoverMyMeds or the plan\'s form) and send it to the prescriber to complete.',
+    'Give the patient the cash or discount-card price so they aren\'t left without the medicine while the PA is pending.']},
+  '79':{t:'Refill too soon',p:'The plan thinks the patient still has enough medicine left from the last fill.',s:[
+    'Check the last fill date and days supply. A wrong days supply on the last claim is a common cause.',
+    'If the dose went up, resubmit with Submission Clarification Code 05 (therapy change) and note the new directions.',
+    'Vacation? Resubmit with SCC 03 (vacation supply). Lost or stolen medicine? SCC 04. Only if it is true.',
+    'If no override fits, tell the patient the date the plan will pay.']},
+  '76':{t:'Plan limits exceeded',p:'The quantity or days supply is more than the plan allows for this drug.',s:[
+    'Check the payer message for the limit (e.g. 30 tablets per 30 days) and fill that amount if the prescriber agrees.',
+    'Confirm the days supply is right for the directions. An understated days supply looks like too much quantity.',
+    'If the patient truly needs more, start a quantity-limit exception or PA with the prescriber.']},
+  '70':{t:'Drug not covered by the plan',p:'This drug (or this NDC) is excluded from the patient\'s benefit.',s:[
+    'Ask the plan or check the payer message for the formulary alternative and contact the prescriber.',
+    'Try a different NDC of the same drug if the exclusion is NDC-specific (some plans exclude certain manufacturers).',
+    'Medicare Part D: give the patient the "Medicare Prescription Drug Coverage and Your Rights" notice and explain they can ask for a coverage determination.',
+    'Quote a cash or discount-card price.']},
+  'MR':{t:'Not on formulary',p:'The drug isn\'t on the plan\'s drug list.',s:[
+    'Find the formulary alternative (payer message, plan website or help desk) and contact the prescriber.',
+    'Ask the prescriber whether to request a formulary exception.',
+    'Part D new enrollee? Ask for a transition fill.']},
+  '88':{t:'DUR reject (safety alert)',p:'The plan\'s safety check flagged something: interaction, duplicate therapy, dose or early refill.',s:[
+    'Look at the DUR conflict code in the response: DD = drug-drug interaction, TD = therapeutic duplication, ID = ingredient duplication, HD/LD = high/low dose, ER = early refill, MX = excessive duration.',
+    'Have the pharmacist review it. Call the prescriber if needed.',
+    'If it\'s OK to fill, resubmit with the DUR/PPS codes that match what actually happened (e.g. Reason DD, Professional Service M0 = prescriber consulted, Result 1G = filled with prescriber approval).',
+    'If the plan still rejects, call the help desk; some DUR rejects need a plan override.']},
+  '41':{t:'Bill the other insurance first',p:'The patient has another plan that has to be billed first (coordination of benefits).',s:[
+    'Ask the patient for their other insurance card and bill it as primary.',
+    'Then bill this plan as secondary with the other coverage code and the primary\'s paid amount.',
+    'Patient says the other coverage ended? Have them call this plan to update their record, or call the help desk.']},
+  '65':{t:'Patient not covered',p:'The plan doesn\'t show the patient as covered.',s:[
+    'Run an eligibility check (E1) to find current coverage.',
+    'Re-check the card: cardholder ID, group, person code, and date of birth.',
+    'Ask the patient if they have a new card this year.']},
+  '67':{t:'Filled before coverage started',p:'The date of service is before the patient\'s coverage begins.',s:['Confirm the effective date with the patient or plan.','Hold the fill until coverage starts, or bill other insurance or cash.']},
+  '68':{t:'Filled after coverage expired',p:'The patient\'s coverage on this plan has ended.',s:['Run an eligibility check (E1) for new coverage.','Ask the patient for their current card.']},
+  '69':{t:'Filled after coverage terminated',p:'Coverage on this plan was terminated.',s:['Run an eligibility check (E1).','Ask the patient for their current card or bill cash.']},
+  '52':{t:'Cardholder ID not found',p:'The plan can\'t match the member ID.',s:['Re-enter the ID exactly as on the card, including prefixes and suffixes.','Check the BIN and PCN match the card.','Run an eligibility check (E1).']},
+  '07':{t:'Missing/invalid cardholder ID',p:'The member ID is missing or in the wrong format.',s:['Re-enter the ID exactly as on the card, including letter prefixes.','Check BIN/PCN/group match the card.']},
+  '06':{t:'Missing/invalid group ID',p:'The group number is missing or wrong.',s:['Re-enter the group number from the card.','Run an eligibility check (E1).']},
+  '08':{t:'Missing/invalid person code',p:'The person code (which family member) is wrong.',s:['Common codes: 01 cardholder, 02 spouse, 03+ dependents, but plans vary. Check the card or call the help desk.']},
+  '09':{t:'Missing/invalid date of birth',p:'Date of birth doesn\'t match the plan.',s:['Confirm the DOB with the patient and re-enter.','If correct, the plan\'s record may be wrong; the patient should call the plan.']},
+  '62':{t:'Name doesn\'t match the ID',p:'The patient name doesn\'t match the plan\'s record for that ID.',s:['Enter the name exactly as on the card.','Check the person code.']},
+  '25':{t:'Missing/invalid prescriber ID',p:'The prescriber\'s NPI is missing or invalid.',s:['Verify the prescriber\'s NPI in the NPPES registry and update the prescriber record.']},
+  '56':{t:'Prescriber not found',p:'The plan doesn\'t recognize the prescriber ID.',s:['Verify the NPI in the NPPES registry.','Part D: the prescriber may need to be enrolled in or not excluded from Medicare.']},
+  '71':{t:'Prescriber not covered',p:'The plan won\'t pay for prescriptions from this prescriber.',s:['Call the help desk for the reason (e.g. not enrolled, excluded).','Patient may need a prescription from a different prescriber, or pay cash.']},
+  '19':{t:'Missing/invalid days supply',p:'Days supply is missing or not allowed.',s:['Recalculate days supply from the directions and re-submit.','Check the plan\'s max days supply for this drug.']},
+  'AG':{t:'Days supply limit for this drug',p:'The plan limits how many days can be filled at once.',s:['Fill the allowed days supply (check the payer message).','Ask the prescriber about a quantity/day-supply exception if needed.']},
+  '22':{t:'Missing/invalid DAW code',p:'The DAW (dispense as written) code doesn\'t fit this claim.',s:['DAW 0 = substitution allowed, 1 = prescriber required brand, 2 = patient requested brand.','Make the DAW match the prescription and the product dispensed.']},
+  'AJ':{t:'Generic required',p:'The plan wants the generic, not the brand.',s:['Dispense the generic if the prescriber allows substitution.','If brand is medically necessary, the prescriber may need DAW 1 plus a PA.']},
+  '21':{t:'Missing/invalid NDC',p:'The NDC is missing or not valid.',s:['Re-check the NDC on the bottle you dispensed.','Make sure the drug file has the current NDC.']},
+  '54':{t:'NDC not found',p:'The plan doesn\'t recognize this NDC.',s:['Confirm the NDC on the package.','New products may not be in the plan\'s file yet. Try another NDC you stock or call the help desk.']},
+  '77':{t:'Discontinued NDC',p:'The plan lists this NDC as discontinued.',s:['Bill with the NDC you actually dispensed; if that NDC is truly obsolete, dispense a current NDC.']},
+  '78':{t:'Cost exceeds maximum',p:'The amount billed is above what the plan allows for one claim.',s:['Check quantity and days supply for typos (e.g. 300 instead of 30).','If correct, call the help desk for a high-dollar override.']},
+  '60':{t:'Not covered for patient age',p:'The plan doesn\'t cover this drug for the patient\'s age.',s:['Check DOB is right.','Contact the prescriber about an alternative or PA.']},
+  '61':{t:'Not covered for patient gender',p:'The plan doesn\'t cover this drug for the patient\'s recorded gender.',s:['Check the gender field matches the plan\'s record.','If correct, a PA or override may be needed.']},
+  '80':{t:'Diagnosis doesn\'t meet criteria',p:'The diagnosis code doesn\'t meet the plan\'s coverage rules for this drug.',s:['Get the diagnosis (ICD-10) from the prescriber and submit it.','If it still rejects, a PA is likely needed.']},
+  '39':{t:'Missing/invalid diagnosis code',p:'The plan needs a diagnosis code for this drug.',s:['Get the ICD-10 code from the prescriber and submit it with the claim.']},
+  '40':{t:'Pharmacy not contracted',p:'Your pharmacy isn\'t in this plan\'s network on this date.',s:['Check the BIN/PCN/group; you may be billing the wrong plan.','If it\'s a network issue, the patient may need a network pharmacy, or pay cash.']},
+  '50':{t:'Pharmacy number not found',p:'The plan doesn\'t recognize your pharmacy ID.',s:['Confirm your NCPDP/NPI in the claim settings.','Call the help desk.']},
+  '81':{t:'Claim too old',p:'The claim was submitted past the plan\'s filing limit.',s:['Call the help desk; some plans allow late submission with a reason.']},
+  '83':{t:'Duplicate claim',p:'A paid claim already exists for this fill.',s:['Check whether it was already billed. Reverse the old claim first if it was billed wrong.']},
+  '85':{t:'Claim not processed',p:'The plan couldn\'t process the claim.',s:['Resubmit after a few minutes.','If it repeats, call the help desk.']},
+  'A5':{t:'Not covered under Part D law',p:'Medicare Part D by law can\'t pay for this drug (for example, some OTCs or drugs for weight loss or cosmetic use).',s:['Bill other coverage if the patient has it, or quote cash.','Give the patient the Part D rights notice if required.']},
+  'A6':{t:'May be covered under Medicare Part B',p:'This drug might be billable to Part B instead of Part D in this situation.',s:['Check the diagnosis and use (e.g. transplant, some diabetic supplies, nebulizer drugs).','Bill Medicare Part B if your pharmacy is enrolled; otherwise refer the patient.']},
+  '569':{t:'Give the patient the Part D rights notice',p:'Medicare requires you to give the patient the "Medicare Prescription Drug Coverage and Your Rights" notice.',s:['Give or post the notice for the patient and note it in the record.','Then work the other reject code(s) on the claim.']}
+};
+const RJ_HINTS=[[/prior auth|\bPA req/i,'75'],[/refill too soon|too soon/i,'79'],[/non.?formulary|not on formulary/i,'MR'],[/quantity limit|qty limit|plan limit/i,'76'],[/other (coverage|payer|insurance)|bill primary|primary payer/i,'41'],[/not covered/i,'70'],[/drug.drug|interaction|therapeutic dup|\bDUR\b/i,'88'],[/generic required/i,'AJ']];
+function rjParse(codes,msg){
+  const out=[]; const add=c=>{ c=c.toUpperCase(); if(/^\d$/.test(c)) c='0'+c; if(!out.includes(c)) out.push(c); };
+  String(codes||'').split(/[^A-Za-z0-9]+/).filter(Boolean).forEach(add);
+  const m=String(msg||'');
+  (m.match(/(?:reject(?:ion)?|code)\s*[:#]?\s*([0-9]{2,3}|[A-Z][A-Z0-9])\b/gi)||[]).forEach(x=>add(x.replace(/.*[\s:#]/,'')));
+  for(const [re,c] of RJ_HINTS) if(re.test(m)) add(c);
+  return out;
+}
+const RJ_KEY='ppf_fixlog';
+const rjLog=()=>{ try{return JSON.parse(localStorage.getItem(RJ_KEY)||'[]');}catch(e){return [];} };
+const rjSave=l=>{ try{localStorage.setItem(RJ_KEY,JSON.stringify(l.slice(-2000)));}catch(e){} };
+const planKey=p=>String(p||'').toUpperCase().replace(/\s+/g,' ').trim();
+const AIK='ppf_ai';
+const aiCfg=()=>{ try{return Object.assign({url:'http://localhost:11434',model:'llama3.1:8b'},JSON.parse(localStorage.getItem(AIK)||'{}'));}catch(e){return {url:'http://localhost:11434',model:'llama3.1:8b'};} };
+function scrub(s){ return String(s||'')
+  .replace(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g,'[date]')
+  .replace(/\b[A-Z]{0,3}\d{6,}[A-Z0-9]*\b/gi,'[id]')
+  .replace(/\b(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})\b/g,'[phone]'); }
+
+S.rj=S.rj||{codes:'',plan:'',drug:'',msg:'',shown:null,ai:null,aiBusy:false};
+function vReject(){
+  const r=S.rj; const log=rjLog(); const pk=planKey(r.plan);
+  let h=`<div class="card"><h2>Explain a rejection</h2><div class="small muted">No patient info needed: just the reject code(s), plan and drug.</div>
+  <div style="margin-top:8px;display:grid;gap:8px">
+   <input type="search" id="rjCodes" placeholder="Reject code(s), e.g. 75 or 88, 569" value="${esc(r.codes)}">
+   <input type="search" id="rjPlan" list="rjPlans" placeholder="Plan name or BIN/PCN" value="${esc(r.plan)}">
+   <datalist id="rjPlans">${[...new Set(log.map(x=>x.plan))].map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+   <input type="search" id="rjDrug" placeholder="Drug (optional)" value="${esc(r.drug)}">
+   <textarea id="rjMsg" rows="3" placeholder="Paste the payer's message (optional). Leave out patient names and IDs." style="font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);width:100%">${esc(r.msg)}</textarea>
+   <button class="btn" id="rjGo">Explain</button></div></div>`;
+  if(r.shown){
+    if(!r.shown.length) h+=`<div class="card empty">Enter a reject code or paste the payer message.</div>`;
+    for(const c of r.shown){
+      const k=RJ[c]; const prev=log.filter(x=>x.code===c&&x.plan===pk);
+      const counts={}; prev.forEach(x=>counts[x.fix]=(counts[x.fix]||0)+1);
+      const ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+      h+=`<div class="card"><div class="row"><h3>${esc(c)} · ${esc(k?k.t:'Code not in this guide yet')}</h3></div>
+      <div style="margin:6px 0">${esc(k?k.p:'Read the payer\'s message and call the help desk number printed on the patient\'s card.')}</div>`;
+      if(ranked.length) h+=`<div class="banner info" style="margin:8px 0">With <b>${esc(r.plan)}</b> this worked before: ${ranked.slice(0,2).map(([f,n])=>`"${esc(f)}" (${n}×)`).join(', ')}</div>`;
+      if(k) h+=`<div class="small" style="margin-top:4px"><b>Try in this order:</b></div>`+k.s.map((s,i)=>`<div class="list-item" style="cursor:default"><div>${i+1}. ${esc(s)}</div>${pk?`<button class="btn ghost sm" style="margin-top:6px" data-worked="${esc(c)}|${i}">✓ This fixed it</button>`:''}</div>`).join('');
+      h+=`</div>`;
+    }
+    if(r.shown.length && !pk) h+=`<div class="small muted" style="margin-bottom:12px">Add the plan name to save which fix worked. The tool learns what works for each plan.</div>`;
+    h+=`<div class="card"><h2>Ask AI (runs on your own computer)</h2><div class="small muted">Sends only the codes, plan, drug and message above to an AI model on your network. Dates, long ID numbers and phone numbers are blanked out first.</div>
+      <button class="btn ghost" id="rjAi" style="margin-top:8px" ${r.aiBusy?'disabled':''}>${r.aiBusy?'Thinking…':'Ask local AI'}</button>
+      ${r.ai?`<div style="margin-top:10px;white-space:pre-wrap;font-size:14px">${esc(r.ai)}</div>`:''}
+      <details><summary>Set up the local AI</summary><div class="small" style="margin-top:6px">
+        Install <b>Ollama</b> on a pharmacy PC, download a model (e.g. <code>ollama pull llama3.1:8b</code>), and allow this page to reach it by setting the environment variable <code>OLLAMA_ORIGINS</code> to this page's address. Then open this tool from that PC.
+        <div class="grid2" style="margin-top:8px"><label>Address<input type="search" id="aiUrl" value="${esc(aiCfg().url)}"></label><label>Model<input type="search" id="aiModel" value="${esc(aiCfg().model)}"></label></div>
+        <div class="muted" style="margin-top:6px">The preview inside Claude can't connect to other addresses. Use the GitHub Pages version for this part.</div></div></details></div>`;
+  }
+  const byPlan={}; log.forEach(x=>{ (byPlan[x.plan]=byPlan[x.plan]||{})[x.code]=(byPlan[x.plan][x.code]||0)+1; });
+  const plans=Object.keys(byPlan);
+  if(plans.length) h+=`<div class="card"><div class="row"><h2>Rejection history</h2><button class="btn ghost sm" id="rjClear">Clear</button></div><div class="small muted">Saved on this device only.</div>
+    <div class="scroll"><table><tr><th>Plan</th><th>Top rejects</th><th class="n">Fixed</th></tr>${plans.map(p=>{const e=Object.entries(byPlan[p]).sort((a,b)=>b[1]-a[1]); return `<tr><td>${esc(p)}</td><td>${e.slice(0,3).map(([c,n])=>`<span class="pill">${esc(c)} ×${n}</span>`).join('')}</td><td class="n">${e.reduce((s,x)=>s+x[1],0)}</td></tr>`;}).join('')}</table></div></div>`;
+  return h;
+}
+function rjRead(){ const r=S.rj; ['Codes','Plan','Drug','Msg'].forEach(f=>{const el=$('#rj'+f); if(el) r[f.toLowerCase()]=el.value;}); }
+async function rjAsk(){
+  rjRead(); const r=S.rj; const cfg=aiCfg(); r.aiBusy=true; r.ai=null; render();
+  const known=(r.shown||[]).map(c=>c+' = '+(RJ[c]?RJ[c].t:'unknown')).join('; ');
+  const user=scrub(`Pharmacy claim rejected.\nReject codes: ${r.codes||'(none)'} (${known})\nPlan: ${r.plan||'(unknown)'}\nDrug: ${r.drug||'(unknown)'}\nPayer message: ${r.msg||'(none)'}\nExplain in plain English why it rejected and list the fixes to try, most likely first. Short.`);
+  try{
+    const res=await fetch(cfg.url.replace(/\/$/,'')+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:cfg.model,stream:false,messages:[
+      {role:'system',content:'You help US retail pharmacy technicians resolve NCPDP claim rejections. Be practical and brief. Never suggest test claims, billing an NDC other than the one dispensed, or any override code that is not true for the fill.'},
+      {role:'user',content:user}]})});
+    if(!res.ok) throw new Error('AI returned '+res.status);
+    const j=await res.json(); r.ai=(j.message&&j.message.content)||'(no answer)';
+  }catch(e){ r.ai='Couldn\'t reach the local AI at '+cfg.url+'. Check that Ollama is running on this network and OLLAMA_ORIGINS allows this page. ('+(e.message||e)+')'; }
+  r.aiBusy=false; render();
+}
+function bindReject(){
+  const go=$('#rjGo'); if(!go) return;
+  go.onclick=()=>{ rjRead(); S.rj.shown=rjParse(S.rj.codes,S.rj.msg); S.rj.ai=null; render(); };
+  document.querySelectorAll('[data-worked]').forEach(el=>el.onclick=()=>{
+    rjRead(); const [c,i]=el.dataset.worked.split('|'); const l=rjLog();
+    l.push({plan:planKey(S.rj.plan),code:c,fix:(t=>t.length>70?t.slice(0,68).trim()+'…':t)(RJ[c].s[+i].split(/[.?:](?:\s|$)/)[0]),drug:S.rj.drug,at:new Date().toISOString().slice(0,10)}); rjSave(l);
+    el.textContent='Saved ✓'; el.disabled=true; });
+  const ai=$('#rjAi'); if(ai) ai.onclick=rjAsk;
+  const save=()=>{ try{localStorage.setItem(AIK,JSON.stringify({url:$('#aiUrl').value.trim(),model:$('#aiModel').value.trim()}));}catch(e){} };
+  ['#aiUrl','#aiModel'].forEach(s=>{const el=$(s); if(el) el.onchange=save;});
+  const cl=$('#rjClear'); if(cl) cl.onclick=()=>{ if(cl.dataset.sure){ rjSave([]); render(); } else { cl.dataset.sure=1; cl.textContent='Tap again to clear'; } };
+}
+
 function render(){
   renderTabs();
-  const v={overview:vOverview,switch:vSwitch,losing:vLosing,over:vOver,lookup:vLookup,data:vData}[S.tab];
+  const v={overview:vOverview,switch:vSwitch,losing:vLosing,over:vOver,lookup:vLookup,reject:vReject,data:vData}[S.tab];
   $('#app').innerHTML=v();
   bind();
 }
@@ -510,6 +666,7 @@ function bind(){
   const fw=$('#fCosts'); if(fw) fw.onchange=()=>fw.files[0]&&loadCosts(fw.files[0]);
   const ow=$('#oWeeks'); if(ow) ow.onchange=()=>{S.opts.weeks=Math.max(1,Math.min(52,+ow.value||6)); saveOpts(); recompute();};
   const om=$('#oMin'); if(om) om.onchange=()=>{S.opts.minClaims=Math.max(1,+om.value||2); saveOpts(); recompute();};
+  bindReject();
   document.querySelectorAll('[data-copy]').forEach(el=>el.onclick=async()=>{ try{ await navigator.clipboard.writeText(TEMPLATES[el.dataset.copy]); el.textContent='Copied'; }catch(e){ el.textContent='Copy blocked: select the text above'; } });
 }
 function saveOpts(){ try{ localStorage.setItem('ppf_opts',JSON.stringify(S.opts)); }catch(e){} }
