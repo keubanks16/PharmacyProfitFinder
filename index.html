@@ -628,7 +628,7 @@ function vReject(){
       <details><summary>Set up the local AI</summary><div class="small" style="margin-top:6px">
         Install <b>Ollama</b> on a pharmacy PC, download a model (e.g. <code>ollama pull llama3.1:8b</code>), and allow this page to reach it by setting the environment variable <code>OLLAMA_ORIGINS</code> to this page's address. Then open this tool from that PC.
         <div class="grid2" style="margin-top:8px"><label>Address<input type="search" id="aiUrl" value="${esc(aiCfg().url)}"></label><label>Model<input type="search" id="aiModel" value="${esc(aiCfg().model)}"></label></div>
-        <div class="muted" style="margin-top:6px">The preview inside Claude can't connect to other addresses. Use the GitHub Pages version for this part.</div></div></details></div>`;
+        <div class="muted" style="margin-top:6px">The in-app preview can't connect to other addresses. Use the GitHub Pages version for this part.</div></div></details></div>`;
   }
   const byPlan={}; log.forEach(x=>{ (byPlan[x.plan]=byPlan[x.plan]||{})[x.code]=(byPlan[x.plan][x.code]||0)+1; });
   const plans=Object.keys(byPlan);
